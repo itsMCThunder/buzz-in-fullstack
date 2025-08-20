@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "build": "cd client && npm install && npm run build && rm -rf ../client-dist && cp -r dist ../client-dist"
+    "build": "cd client && npm install && npm run build && cd .. && rm -rf client-dist && cp -r client/dist client-dist"
   },
   "dependencies": {
     "express": "^4.19.2",
