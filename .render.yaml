@@ -1,1 +1,11 @@
+services:
+  - type: web
+    name: buzz-in-server-1
+    env: node
+    plan: free
+    buildCommand: "npm run build"
+    startCommand: "npm start"
+    envVars:
+      - key: NODE_VERSION
+        value: 18
 
