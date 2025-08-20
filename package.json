@@ -5,13 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "build": "cd client && npm install && npm run build && cd .. && npx shx rm -rf client-dist && npx shx cp -r client/dist client-dist"
+    "build": "cd client && npm install && npm run build"
   },
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
-  },
-  "devDependencies": {
-    "shx": "^0.3.4"
   }
 }
