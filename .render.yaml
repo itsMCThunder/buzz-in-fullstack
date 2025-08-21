@@ -9,8 +9,9 @@ services:
   npm install
   cd client
   npm install
-  npm run build || echo "CLIENT BUILD FAILED"
-  ls -R dist || echo "DIST IS MISSING"
+  npm run build --verbose || echo "CLIENT BUILD FAILED"
+  echo "Searching for index.html..."
+  find /opt/render/project/src -name "index.html" | tee /opt/render/project/src/build-log.txt
   cd ..
     startCommand: "npm start"
     envVars:
