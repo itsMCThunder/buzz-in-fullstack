@@ -23,10 +23,6 @@ io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 });
 
-const PORT = process.env.PORT || 10000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
-});
 
 const rooms = {};
 
@@ -130,6 +126,6 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "client-dist", "index.html"));
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000;
 httpServer.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
