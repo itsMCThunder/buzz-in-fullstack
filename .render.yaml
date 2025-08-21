@@ -4,15 +4,15 @@ services:
     env: node
     plan: free
     rootDir: .
-   buildCommand: |
-  set -e
-  npm install
-  cd client
-  npm install
-  npm run build --verbose || echo "CLIENT BUILD FAILED"
-  echo "Searching for index.html..."
-  find /opt/render/project/src -name "index.html" | tee /opt/render/project/src/build-log.txt
-  cd ..
+    buildCommand: |
+      set -e
+      npm install
+      cd client
+      npm install
+      npm run build || echo "CLIENT BUILD FAILED"
+      echo "=== Searching for index.html ==="
+      find /opt/render/project/src -name "index.html" || echo "NO INDEX FOUND"
+      cd ..
     startCommand: "npm start"
     envVars:
       - key: NODE_VERSION
