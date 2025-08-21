@@ -5,6 +5,7 @@ services:
     plan: free
     rootDir: .
     buildCommand: |
+      set -e
       npm install
       cd client
       npm install
