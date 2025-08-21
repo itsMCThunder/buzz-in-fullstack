@@ -1,44 +1,15 @@
-import React, { useState } from "react";
+import React from "react";
 import GameLobby from "./GameLobby.jsx";
 
-export default function App() {
-  const [playerName, setPlayerName] = useState("");
-  const [roomCode, setRoomCode] = useState("");
-  const [joined, setJoined] = useState(false);
-
-  const handleJoin = () => {
-    if (playerName && roomCode) {
-      setJoined(true);
-    }
-  };
-
-  if (joined) {
-    return <GameLobby playerName={playerName} roomCode={roomCode} />;
-  }
-
+function App() {
   return (
-    <div className="bg-animated app-container">
-      <h1 className="neon-title">⚡ Buzz-In ⚡</h1>
-
-      <input
-        type="text"
-        placeholder="Enter your name"
-        value={playerName}
-        onChange={(e) => setPlayerName(e.target.value)}
-      />
-
-      <input
-        type="text"
-        placeholder="Enter room code"
-        value={roomCode}
-        onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-      />
-
-      <div className="buttons">
-        <button className="btn btn-primary" onClick={handleJoin}>
-          Join Game
-        </button>
+    <div className="bg-animated min-h-screen flex items-center justify-center">
+      <div className="app-container">
+        <h1 className="neon-title">Buzz-In Game</h1>
+        <GameLobby />
       </div>
     </div>
   );
 }
+
+export default App;
