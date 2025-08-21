@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
+import "./index.css";
 import io from "socket.io-client";
 
 const socket = io("https://buzz-in-server-1.onrender.com"); // Update if needed
