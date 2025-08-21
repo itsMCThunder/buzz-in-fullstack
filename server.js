@@ -19,7 +19,14 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(clientPath, "index.html"));
 });
 
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+});
 
+const PORT = process.env.PORT || 10000;
+httpServer.listen(PORT, () => {
+  console.log(`Server running on ${PORT}`);
+});
 
 const rooms = {};
 
