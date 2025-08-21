@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import io from "socket.io-client";
 
-const socket = io("https://buzz-in-server-1.onrender.com"); // Update if needed
+const socket = io("https://buzz-in-server-1.onrender.com"); // Render server URL
 
 function App() {
   const [roomCode, setRoomCode] = useState("");
@@ -12,6 +12,7 @@ function App() {
   const [room, setRoom] = useState(null);
   const [serverConnected, setServerConnected] = useState(false);
 
+  // Socket listeners
   useEffect(() => {
     socket.on("connect", () => setServerConnected(true));
     socket.on("disconnect", () => setServerConnected(false));
@@ -31,9 +32,10 @@ function App() {
     };
   }, []);
 
+  // Actions
   const createRoom = () => {
     if (!playerName) return alert("Enter your name first!");
-    socket.emit("create_room", { hostName: playerName }, ({ ok, roomCode }) => {
+    socket.emit("create_room", { hostName: playerName, mode: "free" }, ({ ok, roomCode }) => {
       if (ok) {
         setRoomCode(roomCode);
         setIsHost(true);
@@ -42,7 +44,7 @@ function App() {
   };
 
   const joinRoom = () => {
-    if (!playerName || !roomCode) return alert("Enter name and room code!");
+    if (!playerName || !roomCode) return alert("Enter your name and room code!");
     socket.emit("join_room", { roomCode, name: playerName }, ({ ok, error }) => {
       if (!ok) return alert(error);
       setIsHost(false);
@@ -50,48 +52,53 @@ function App() {
   };
 
   const buzz = () => socket.emit("buzz", { roomCode });
-  const awardPoints = (id, pts) =>
-    socket.emit("award_points", { roomCode, playerId: id, points: pts });
+  const awardPoints = (id, pts) => socket.emit("award_points", { roomCode, playerId: id, points: pts });
   const resetBuzz = () => socket.emit("reset_buzz", { roomCode });
 
-  // Pre-game lobby
+  // Landing screen (pre-lobby)
   if (!room) {
     return (
-      <div className="app-container">
-        <h1>Buzz-In</h1>
-        <div className={`status ${serverConnected ? "online" : "offline"}`}>
-          {serverConnected ? "🟢 Connected" : "🔴 Offline"}
+      <div className="app-container bg-animated">
+        <header>
+          <h1 className="neon-title">Buzz-In Game</h1>
+          <div className={`status ${serverConnected ? "online" : "offline"}`}>
+            {serverConnected ? "🟢 Server Connected" : "🔴 Server Offline"}
+          </div>
+        </header>
+
+        <div className="lobby">
+          <input
+            type="text"
+            placeholder="Your Name"
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+          />
+          <div className="buttons">
+            <button onClick={createRoom} className="btn btn-primary">Host Game</button>
+          </div>
+          <input
+            type="text"
+            placeholder="Room Code"
+            value={roomCode}
+            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+          />
+          <div className="buttons">
+            <button onClick={joinRoom} className="btn btn-secondary">Join Game</button>
+          </div>
         </div>
-        <input
-          type="text"
-          placeholder="Your Name"
-          value={playerName}
-          onChange={(e) => setPlayerName(e.target.value)}
-          className="p-2 rounded mb-2"
-        />
-        <div>
-          <button onClick={createRoom} className="btn btn-primary">
-            Host Game
-          </button>
-        </div>
-        <input
-          type="text"
-          placeholder="Room Code"
-          value={roomCode}
-          onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-          className="p-2 rounded mb-2"
-        />
-        <button onClick={joinRoom} className="btn btn-secondary">
-          Join Game
-        </button>
       </div>
     );
   }
 
-  // In-game
+  // Game room
   return (
-    <div className="app-container">
-      <h2>Room: {roomCode}</h2>
+    <div className="app-container bg-animated">
+      <header>
+        <h1 className="neon-title">Room: {roomCode}</h1>
+        <div className={`status ${serverConnected ? "online" : "offline"}`}>
+          {serverConnected ? "🟢 Server Connected" : "🔴 Server Offline"}
+        </div>
+      </header>
 
       <div className="players-list">
         {room.players.map((p) => (
@@ -99,20 +106,10 @@ function App() {
             <span>{p.name}</span>
             <span className="score">{p.score} pts</span>
             {isHost && (
-              <span>
-                <button
-                  onClick={() => awardPoints(p.id, 1)}
-                  className="btn btn-primary"
-                >
-                  +1
-                </button>
-                <button
-                  onClick={() => awardPoints(p.id, -1)}
-                  className="btn btn-danger"
-                >
-                  -1
-                </button>
-              </span>
+              <div>
+                <button onClick={() => awardPoints(p.id, 1)} className="btn btn-positive">+1</button>
+                <button onClick={() => awardPoints(p.id, -1)} className="btn btn-negative">-1</button>
+              </div>
             )}
           </div>
         ))}
@@ -122,7 +119,7 @@ function App() {
         <button
           onClick={buzz}
           disabled={room.buzzed !== null}
-          className={`buzz-btn ${room.buzzed === null ? "active" : ""}`}
+          className={`buzz-btn ${room.buzzed === null ? "buzz-active" : "buzz-locked"}`}
         >
           Buzz!
         </button>
@@ -130,15 +127,13 @@ function App() {
 
       {isHost && (
         <div className="host-controls">
-          <h3>Host Controls</h3>
-          <button onClick={resetBuzz} className="btn btn-secondary">
-            Reset Buzz
-          </button>
+          <h2 className="controls-title">Host Controls</h2>
+          <button onClick={resetBuzz} className="btn btn-neutral">Reset Buzz</button>
         </div>
       )}
 
       {room.buzzed && (
-        <div className="mt-4 text-lg font-bold">
+        <div className="buzz-indicator">
           Buzzed: {room.players.find((p) => p.id === room.buzzed)?.name}
         </div>
       )}
