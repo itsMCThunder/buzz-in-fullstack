@@ -4,13 +4,14 @@ services:
     env: node
     plan: free
     rootDir: .
-    buildCommand: |
-      set -e
-      npm install
-      cd client
-      npm install
-      npm run build
-      cd ..
+   buildCommand: |
+  set -e
+  npm install
+  cd client
+  npm install
+  npm run build || echo "CLIENT BUILD FAILED"
+  ls -R dist || echo "DIST IS MISSING"
+  cd ..
     startCommand: "npm start"
     envVars:
       - key: NODE_VERSION
