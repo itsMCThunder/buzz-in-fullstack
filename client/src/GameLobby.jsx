@@ -1,84 +1,46 @@
 import React, { useState, useEffect } from "react";
+import io from "socket.io-client";
 
-export default function GameLobby({ socket, roomCode, isHost }) {
+const socket = io();
+
+export default function GameLobby({ playerName, roomCode }) {
   const [players, setPlayers] = useState([]);
-  const [scores, setScores] = useState({});
-  const [buzzLocked, setBuzzLocked] = useState(false);
+  const [status, setStatus] = useState("online");
 
   useEffect(() => {
+    socket.emit("join_room", { playerName, roomCode });
+
     socket.on("room_update", (room) => {
       setPlayers(room.players || []);
-      setScores(
-        room.players.reduce((acc, p) => {
-          acc[p.id] = p.score;
-          return acc;
-        }, {})
-      );
     });
 
     return () => {
       socket.off("room_update");
     };
-  }, [socket]);
-
-  const handleBuzz = () => {
-    if (!buzzLocked) {
-      socket.emit("buzz", { roomCode });
-      setBuzzLocked(true);
-    }
-  };
-
-  const handleUnlockBuzzers = () => {
-    setBuzzLocked(false);
-    socket.emit("unlock_buzzers", { roomCode });
-  };
-
-  const handleLockBuzzers = () => {
-    setBuzzLocked(true);
-    socket.emit("lock_buzzers", { roomCode });
-  };
+  }, [playerName, roomCode]);
 
   return (
-    <div className="app-container">
-      <h2 className="neon-title">Room Code: {roomCode}</h2>
+    <div className="bg-animated app-container">
+      <h1 className="neon-title">Lobby: {roomCode}</h1>
+      <p className={`status ${status}`}>Server {status}</p>
 
       <div className="players-list">
         {players.map((p) => (
           <div key={p.id} className="player-card">
             <span>{p.name}</span>
-            <span className="score">{scores[p.id] ?? 0}</span>
+            <span className="score">{p.score}</span>
           </div>
         ))}
       </div>
 
-      {!isHost && (
-        <button
-          className={`buzz-btn ${buzzLocked ? "buzz-locked" : "buzz-active"}`}
-          onClick={handleBuzz}
-          disabled={buzzLocked}
-        >
-          BUZZ!
-        </button>
-      )}
-
-      {isHost && (
-        <div className="host-controls">
-          <h3 className="controls-title">Host Controls</h3>
-          <div className="point-buttons">
-            <button className="btn btn-positive">+ Points</button>
-            <button className="btn btn-neutral">0 Points</button>
-            <button className="btn btn-negative">- Points</button>
-          </div>
-          <div className="buttons" style={{ marginTop: "15px" }}>
-            <button className="btn btn-primary" onClick={handleUnlockBuzzers}>
-              Unlock Buzzers
-            </button>
-            <button className="btn btn-secondary" onClick={handleLockBuzzers}>
-              Lock Buzzers
-            </button>
-          </div>
+      <div className="host-controls">
+        <p className="controls-title">Host Controls</p>
+        <div className="point-buttons">
+          <button className="btn btn-positive">+ Points</button>
+          <button className="btn btn-neutral">0 Points</button>
+          <button className="btn btn-negative">- Points</button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
