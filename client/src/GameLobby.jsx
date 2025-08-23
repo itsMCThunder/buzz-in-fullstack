@@ -52,7 +52,6 @@ export default function GameLobby({ roomCode }) {
   const [selfId, setSelfId] = useState(null);
   const navigate = useNavigate();
 
-  // connect once and capture our id
   useEffect(() => {
     if (!socket.connected) socket.connect();
     setSelfId(socket.id);
@@ -68,8 +67,7 @@ export default function GameLobby({ roomCode }) {
     socket.on("room_update", onUpdate);
     socket.on("error_message", onErr);
 
-    // Ask server to ensure we are in the room context.
-    // These are idempotent on the server side based on earlier setup.
+    // Ensure server has us attached to the room
     socket.emit("create_room", { roomCode });
     socket.emit("join_room", { roomCode, playerName: "Player" });
 
@@ -106,3 +104,43 @@ export default function GameLobby({ roomCode }) {
         </div>
 
         {room ? (
+          <>
+            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800">
+              <div className="flex items-center justify-between">
+                <div>Players: {room.players?.length || 0}</div>
+                <div>Host: {room.hostId?.slice(0, 6) || "unknown"}</div>
+              </div>
+
+              <PlayerList
+                players={room.players || []}
+                buzzedId={room.buzzed}
+                isHost={isHost}
+                onAward={award}
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              {isHost ? (
+                <button
+                  className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700"
+                  onClick={resetBuzz}
+                >
+                  Reset buzz
+                </button>
+              ) : (
+                <button
+                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 active:bg-amber-700"
+                  onClick={buzz}
+                >
+                  Buzz
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800">Waiting for room state…</div>
+        )}
+      </div>
+    </div>
+  );
+}
