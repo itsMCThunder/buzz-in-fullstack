@@ -4,128 +4,180 @@ import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*" } });
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// ✅ Serve React build (from client/dist instead of client-dist)
-// Serve React build directly from /client/dist
-const clientPath = path.join(__dirname, "client-dist");
-app.use(express.static(clientPath));
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(clientPath, "index.html"));
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: "*", methods: ["GET","POST"] },
 });
 
+// Cache control helpers
+const noStore = (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+};
+
+// Static hosting: serve built client from /client-dist
+const clientDist = path.join(__dirname, "client-dist");
+
+// Never cache index shell
+app.get("/", noStore, (req, res, next) => next());
+app.get("/index.html", noStore, (req, res, next) => next());
+
+// Serve static with smart caching
+app.use(express.static(clientDist, {
+  setHeaders: (res, filePath) => {
+    const base = path.basename(filePath);
+    const isHashed = /\.[a-f0-9]{8,}\./i.test(base);
+    if (isHashed) {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    } else {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  }
+}));
+
+// Health
+app.get("/health", (req, res) => res.json({ ok: true }));
+
+// In-memory game state
+const rooms = new Map(); // roomCode -> { hostId, players: Map<socketId,{id,name,score,team}>, buzzed: string|null }
+
+function getRoomSnapshot(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room) return null;
+  return {
+    code: roomCode,
+    hostId: room.hostId,
+    players: Array.from(room.players.values()),
+    buzzed: room.buzzed,
+  };
+}
+
 io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
-});
-
-
-const rooms = {};
-
-io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
-
-  socket.on("create_room", ({ hostName, mode }, callback) => {
-    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
-    rooms[code] = {
-      hostId: socket.id,
-      mode,
-      players: [{ id: socket.id, name: hostName, score: 0 }],
-      buzzed: null,
-      teams: { A: { name: null, score: 0 }, B: { name: null, score: 0 } },
-      queue: [],
-    };
-    socket.join(code);
-    callback({ ok: true, roomCode: code });
-    io.to(code).emit("room_update", rooms[code]);
-  });
-
-  socket.on("join_room", ({ roomCode, name }, callback) => {
-    const room = rooms[roomCode];
-    if (!room) return callback({ ok: false, error: "Room not found" });
-    room.players.push({ id: socket.id, name, score: 0 });
+  // create_room
+  socket.on("create_room", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    if (!roomCode) {
+      socket.emit("error_message", "Missing room code");
+      return;
+    }
+    let room = rooms.get(roomCode);
+    if (!room) {
+      room = { hostId: socket.id, players: new Map(), buzzed: null };
+      rooms.set(roomCode, room);
+    } else {
+      room.hostId = socket.id;
+    }
     socket.join(roomCode);
-    callback({ ok: true });
-    io.to(roomCode).emit("room_update", room);
+    socket.emit("room_update", getRoomSnapshot(roomCode));
   });
 
-  socket.on("buzz", ({ roomCode }) => {
-    const room = rooms[roomCode];
-    if (room && !room.buzzed) {
-      room.buzzed = socket.id;
-      room.queue.push(socket.id);
-      io.to(roomCode).emit("room_update", room);
-      io.to(roomCode).emit("queue_update", room.queue);
+  // join_room
+  socket.on("join_room", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    const playerName = String(payload.playerName || "").trim() || "Player";
+    const room = rooms.get(roomCode);
+    if (!room) {
+      socket.emit("error_message", "Room not found");
+      return;
+    }
+    const player = { id: socket.id, name: playerName, score: 0, team: null };
+    room.players.set(socket.id, player);
+    socket.join(roomCode);
+    io.to(roomCode).emit("room_update", getRoomSnapshot(roomCode));
+  });
+
+  // buzz
+  socket.on("buzz", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    if (room.buzzed) return; // ignore after first buzz
+    if (!room.players.has(socket.id)) return;
+    room.buzzed = socket.id;
+    io.to(roomCode).emit("room_update", getRoomSnapshot(roomCode));
+  });
+
+  // reset_buzz (host only)
+  socket.on("reset_buzz", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    if (room.hostId !== socket.id) return;
+    room.buzzed = null;
+    io.to(roomCode).emit("room_update", getRoomSnapshot(roomCode));
+  });
+
+  // set_teams (bulk, host only): { assignments: { socketId: teamName } }
+  socket.on("set_teams", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    const assignments = payload.assignments || {};
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    if (room.hostId !== socket.id) return;
+    for (const [sid, team] of Object.entries(assignments)) {
+      const p = room.players.get(sid);
+      if (p) p.team = team ?? null;
+    }
+    io.to(roomCode).emit("room_update", getRoomSnapshot(roomCode));
+  });
+
+  // assign_team (single, host only)
+  socket.on("assign_team", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    const targetId = String(payload.playerId || "");
+    const team = payload.team ?? null;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    if (room.hostId !== socket.id) return;
+    const p = room.players.get(targetId);
+    if (p) {
+      p.team = team;
+      io.to(roomCode).emit("room_update", getRoomSnapshot(roomCode));
     }
   });
 
-  socket.on("award_points", ({ roomCode, playerId, points }) => {
-    const room = rooms[roomCode];
-    if (room && room.hostId === socket.id) {
-      const player = room.players.find((p) => p.id === playerId);
-      if (player) {
-        player.score += points;
-        if (player.team) {
-          room.teams[player.team].score += points;
-        }
-      }
-      io.to(roomCode).emit("room_update", room);
+  // award_points (host only)
+  socket.on("award_points", (payload = {}) => {
+    const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+    const targetId = String(payload.playerId || "");
+    const delta = Number(payload.points || 0);
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    if (room.hostId !== socket.id) return;
+    const p = room.players.get(targetId);
+    if (p) {
+      p.score = Math.max(0, (p.score || 0) + delta);
+      io.to(roomCode).emit("room_update", getRoomSnapshot(roomCode));
     }
   });
 
-  socket.on("reset_buzz", ({ roomCode }) => {
-    const room = rooms[roomCode];
-    if (room && room.hostId === socket.id) {
-      room.buzzed = null;
-      room.queue = [];
-      io.to(roomCode).emit("room_update", room);
-      io.to(roomCode).emit("queue_update", []);
-    }
-  });
-
-  socket.on("set_teams", ({ roomCode, teamA, teamB }) => {
-    const room = rooms[roomCode];
-    if (room && room.hostId === socket.id) {
-      room.teams.A.name = teamA;
-      room.teams.B.name = teamB;
-      io.to(roomCode).emit("room_update", room);
-    }
-  });
-
-  socket.on("assign_team", ({ roomCode, playerId, teamKey }) => {
-    const room = rooms[roomCode];
-    if (room) {
-      const player = room.players.find((p) => p.id === playerId);
-      if (player) {
-        player.team = teamKey;
-        io.to(roomCode).emit("room_update", room);
-      }
-    }
-  });
-
+  // disconnect cleanup
   socket.on("disconnect", () => {
-    for (const [code, room] of Object.entries(rooms)) {
-      room.players = room.players.filter((p) => p.id !== socket.id);
+    for (const [code, room] of rooms.entries()) {
+      if (room.players.delete(socket.id)) {
+        if (room.buzzed === socket.id) room.buzzed = null;
+        io.to(code).emit("room_update", getRoomSnapshot(code));
+      }
       if (room.hostId === socket.id) {
-        io.to(code).emit("room_closed");
-        delete rooms[code];
-      } else {
-        io.to(code).emit("room_update", room);
+        io.to(code).emit("error_message", "Host disconnected");
+        rooms.delete(code);
       }
     }
   });
 });
 
-app.use(express.static(path.join(__dirname, "client-dist")));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "client-dist", "index.html"));
+// SPA fallback
+app.get("*", noStore, (req, res) => {
+  res.sendFile(path.join(clientDist, "index.html"));
 });
 
 const PORT = process.env.PORT || 10000;
-httpServer.listen(PORT, () => console.log(`Server running on ${PORT}`));
-
+httpServer.listen(PORT, () => {
+  console.log(`Server running on ${PORT}`);
+});
