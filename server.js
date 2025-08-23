@@ -1,17 +1,23 @@
+// server.js
 import express from "express";
+import compression from "compression";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*", methods: ["GET","POST"] } });
+const isProd = process.env.NODE_ENV === "production";
 
-// ---------- Cache controls ----------
+const app = express();
+app.disable("x-powered-by");
+if (!isProd) app.set("etag", false);
+app.use(compression());
+
+// never cache index shell
 const noStore = (req, res, next) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -19,14 +25,23 @@ const noStore = (req, res, next) => {
   next();
 };
 
-// ---------- Paths (preserve your structure) ----------
+// built client dir
 const clientDist = path.join(__dirname, "client-dist");
 
-// Never cache the shell so new hashed CSS/JS are always picked up after deploy
+// loud sanity checks so we don’t silently serve blank HTML
+const htmlPath = path.join(clientDist, "index.html");
+if (!fs.existsSync(clientDist)) {
+  console.error("ERROR: client-dist not found. Did the client build run?");
+}
+if (!fs.existsSync(htmlPath)) {
+  console.error("ERROR: client-dist/index.html missing. Build is incomplete or failed.");
+}
+
+// override caching for shell
 app.get("/", noStore, (req, res, next) => next());
 app.get("/index.html", noStore, (req, res, next) => next());
 
-// Static with smart caching: long cache for hashed files, no‑cache for others
+// static files: cache hashed assets strongly, others lightly
 app.use(
   express.static(clientDist, {
     setHeaders: (res, filePath) => {
@@ -37,15 +52,35 @@ app.use(
       } else {
         res.setHeader("Cache-Control", "no-cache");
       }
-    },
+    }
   })
 );
 
-// Health
+// health
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-// ---------- Minimal game state (unchanged semantics) ----------
-const rooms = new Map(); // code -> { hostId, players: Map, buzzed }
+// simple debug endpoint to verify build presence in production
+app.get("/__debug/build-info", (req, res) => {
+  try {
+    const entries = fs.existsSync(clientDist) ? fs.readdirSync(clientDist) : [];
+    const assetsDir = path.join(clientDist, "assets");
+    const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).filter(f => f.endsWith(".css") || f.endsWith(".js")) : [];
+    res.json({
+      clientDistExists: fs.existsSync(clientDist),
+      indexHtmlExists: fs.existsSync(htmlPath),
+      assetSamples: assets.slice(0, 10)
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Socket.IO
+const httpServer = createServer(app);
+const io = new Server(httpServer, { cors: { origin: "*", methods: ["GET","POST"] } });
+
+// in-memory game state
+const rooms = new Map(); // code -> { hostId, players: Map<sid,{id,name,score,team}>, buzzed: sid|null }
 
 const snapshot = (code) => {
   const r = rooms.get(code);
@@ -94,8 +129,8 @@ io.on("connection", (socket) => {
     const room = rooms.get(code);
     if (!room || room.hostId !== socket.id) return;
     for (const [sid, team] of Object.entries(p.assignments || {})) {
-      const player = room.players.get(sid);
-      if (player) player.team = team ?? null;
+      const pl = room.players.get(sid);
+      if (pl) pl.team = team ?? null;
     }
     io.to(code).emit("room_update", snapshot(code));
   });
@@ -104,9 +139,9 @@ io.on("connection", (socket) => {
     const code = String(p.roomCode || "").trim().toUpperCase();
     const room = rooms.get(code);
     if (!room || room.hostId !== socket.id) return;
-    const player = room.players.get(String(p.playerId || ""));
-    if (player) {
-      player.team = p.team ?? null;
+    const pl = room.players.get(String(p.playerId || ""));
+    if (pl) {
+      pl.team = p.team ?? null;
       io.to(code).emit("room_update", snapshot(code));
     }
   });
@@ -115,9 +150,9 @@ io.on("connection", (socket) => {
     const code = String(p.roomCode || "").trim().toUpperCase();
     const room = rooms.get(code);
     if (!room || room.hostId !== socket.id) return;
-    const player = room.players.get(String(p.playerId || ""));
-    if (player) {
-      player.score = Math.max(0, (player.score || 0) + Number(p.points || 0));
+    const pl = room.players.get(String(p.playerId || ""));
+    if (pl) {
+      pl.score = Math.max(0, (pl.score || 0) + Number(p.points || 0));
       io.to(code).emit("room_update", snapshot(code));
     }
   });
@@ -136,10 +171,13 @@ io.on("connection", (socket) => {
   });
 });
 
-// SPA fallback: never cache shell
+// SPA fallback serves the built shell only
 app.get("*", noStore, (req, res) => {
-  res.sendFile(path.join(clientDist, "index.html"));
+  res.sendFile(htmlPath);
 });
 
 const PORT = process.env.PORT || 10000;
-httpServer.listen(PORT, () => console.log(`Server running on ${PORT}`));
+httpServer.listen(PORT, () => {
+  console.log(`Server running on ${PORT}`);
+  console.log(`Serving client from: ${clientDist}`);
+});
