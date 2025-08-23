@@ -1,13 +1,15 @@
 {
   "name": "buzz-in-fullstack",
-  "version": "1.0.0",
-  "main": "server.js",
+  "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "build": "cd client && npm install && npm run build"
+    "dev:server": "NODE_ENV=development node server.js",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm ci && npm run build",
+    "start": "node server.js"
   },
   "dependencies": {
+    "compression": "^1.7.4",
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
   }
