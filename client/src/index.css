@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Optional custom styles */
+:root {
+  color-scheme: dark;
+}
+
 /* === Animated background === */
 @keyframes gradientShift {
   0% { background-position: 0% 50%; }
