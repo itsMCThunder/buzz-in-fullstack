@@ -1,19 +1,14 @@
 services:
   - type: web
-    name: buzz-in-server-1
+    name: buzz-in
     env: node
     plan: free
-    rootDir: .
     buildCommand: |
-      set -e
-      npm install
-      cd client
-      npm install
-      npm run build || echo "CLIENT BUILD FAILED"
-      echo "=== Searching for index.html ==="
-      find /opt/render/project/src -name "index.html" || echo "NO INDEX FOUND"
-      cd ..
-    startCommand: "npm start"
+      npm ci
+      npm run build
+    startCommand: |
+      npm start
+    autoDeploy: true
     envVars:
-      - key: NODE_VERSION
-        value: 18
+      - key: NODE_ENV
+        value: production
