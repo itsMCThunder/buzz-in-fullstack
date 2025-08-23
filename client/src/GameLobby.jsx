@@ -1,13 +1,58 @@
-// client/src/GameLobby.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import socket from "./socket";
+
+function PlayerList({ players = [], buzzedId, isHost, onAward }) {
+  return (
+    <div className="mt-4 grid gap-2">
+      {players.map((p) => {
+        const buzzed = buzzedId === p.id;
+        return (
+          <div
+            key={p.id}
+            className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
+              buzzed ? "bg-amber-900/40 border-amber-600" : "bg-neutral-800 border-neutral-700"
+            }`}
+          >
+            <div className="truncate">
+              <span className="font-semibold">{p.name}</span>
+              <span className="opacity-60"> · {p.id.slice(0, 6)}</span>
+              {buzzed ? <span className="ml-2 px-2 py-0.5 text-sm rounded bg-amber-600">BUZZED</span> : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700">
+                {p.score ?? 0} pts
+              </span>
+              {isHost ? (
+                <>
+                  <button
+                    className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700"
+                    onClick={() => onAward(p.id, 1)}
+                  >
+                    +1
+                  </button>
+                  <button
+                    className="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 active:bg-rose-700"
+                    onClick={() => onAward(p.id, -1)}
+                  >
+                    −1
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function GameLobby({ roomCode }) {
   const [room, setRoom] = useState(null);
   const [selfId, setSelfId] = useState(null);
   const navigate = useNavigate();
 
+  // connect once and capture our id
   useEffect(() => {
     if (!socket.connected) socket.connect();
     setSelfId(socket.id);
@@ -17,17 +62,16 @@ export default function GameLobby({ roomCode }) {
       setRoom(snapshot);
     };
     const onErr = (msg) => {
-      // If host disconnected, server may destroy room. Go home.
       console.warn("[lobby] error_message:", msg);
     };
 
     socket.on("room_update", onUpdate);
     socket.on("error_message", onErr);
 
-    // Ask server to re‑emit current state in case we navigated directly
-    // This is optional if server always emits on join/create, but harmless
-    socket.emit("create_room", { roomCode }); // if you are host this refreshes hostId
-    socket.emit("join_room", { roomCode, playerName: "Player" }); // harmless if already joined
+    // Ask server to ensure we are in the room context.
+    // These are idempotent on the server side based on earlier setup.
+    socket.emit("create_room", { roomCode });
+    socket.emit("join_room", { roomCode, playerName: "Player" });
 
     return () => {
       socket.off("room_update", onUpdate);
@@ -37,16 +81,19 @@ export default function GameLobby({ roomCode }) {
 
   const isHost = useMemo(() => room && selfId && room.hostId === selfId, [room, selfId]);
 
-  const resetBuzz = () => socket.emit("reset_buzz", { roomCode });
+  const resetBuzz = useCallback(() => {
+    socket.emit("reset_buzz", { roomCode });
+  }, [roomCode]);
 
-  const award = (sid, points) => {
+  const buzz = useCallback(() => {
+    socket.emit("buzz", { roomCode });
+  }, [roomCode]);
+
+  const award = useCallback((sid, points) => {
     socket.emit("award_points", { roomCode, playerId: sid, points });
-  };
+  }, [roomCode]);
 
-  const leave = () => {
-    navigate("/");
-    // optional: socket.disconnect(); but keeping it connected helps reconnection
-  };
+  const leave = () => navigate("/");
 
   return (
     <div className="min-h-screen p-6 bg-neutral-950 text-neutral-100">
@@ -59,76 +106,3 @@ export default function GameLobby({ roomCode }) {
         </div>
 
         {room ? (
-          <>
-            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800">
-              <div className="flex items-center justify-between">
-                <div>Players: {room.players?.length || 0}</div>
-                <div>Host: {room.hostId?.slice(0, 6) || "unknown"}</div>
-              </div>
-              <div className="mt-4 grid gap-2">
-                {(room.players || []).map((p) => {
-                  const buzzed = room.buzzed === p.id;
-                  return (
-                    <div
-                      key={p.id}
-                      className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                        buzzed ? "bg-amber-900/40 border-amber-600" : "bg-neutral-800 border-neutral-700"
-                      }`}
-                    >
-                      <div className="truncate">
-                        <span className="font-semibold">{p.name}</span>
-                        <span className="opacity-60"> · {p.id.slice(0, 6)}</span>
-                        {buzzed ? <span className="ml-2 px-2 py-0.5 text-sm rounded bg-amber-600">BUZZED</span> : null}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700">
-                          {p.score ?? 0} pts
-                        </span>
-                        {isHost ? (
-                          <>
-                            <button
-                              className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700"
-                              onClick={() => award(p.id, 1)}
-                            >
-                              +1
-                            </button>
-                            <button
-                              className="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 active:bg-rose-700"
-                              onClick={() => award(p.id, -1)}
-                            >
-                              −1
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {isHost ? (
-                <button
-                  className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700"
-                  onClick={resetBuzz}
-                >
-                  Reset buzz
-                </button>
-              ) : (
-                <button
-                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 active:bg-amber-700"
-                  onClick={() => socket.emit("buzz", { roomCode })}
-                >
-                  Buzz
-                </button>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800">Waiting for room state…</div>
-        )}
-      </div>
-    </div>
-  );
-}
