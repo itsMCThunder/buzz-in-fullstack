@@ -1,11 +1,9 @@
-// client/src/App.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, useParams } from "react-router-dom";
 import socket from "./socket";
 import GameLobby from "./GameLobby.jsx";
 import "./index.css";
 
-// Helper to make clean 4-6 char codes
 function makeRoomCode(len = 5) {
   const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
@@ -19,12 +17,10 @@ function Home() {
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 
-  // Ensure socket is connected
   useEffect(() => {
     if (!socket.connected) socket.connect();
   }, []);
 
-  // Handle server errors
   useEffect(() => {
     const onErr = (msg) => {
       alert(typeof msg === "string" ? msg : "An error occurred");
@@ -34,16 +30,15 @@ function Home() {
     return () => socket.off("error_message", onErr);
   }, []);
 
-  const doHost = async () => {
+  const doHost = () => {
     if (busy) return;
     setBusy(true);
     const code = (roomCode || makeRoomCode()).toUpperCase().trim();
-    // Navigate immediately, then let Lobby subscribe to updates
     socket.emit("create_room", { roomCode: code });
     navigate(`/room/${code}`);
   };
 
-  const doJoin = async () => {
+  const doJoin = () => {
     if (busy) return;
     const code = roomCode.toUpperCase().trim();
     if (!code) {
@@ -52,7 +47,6 @@ function Home() {
     }
     const name = playerName.trim() || "Player";
     setBusy(true);
-    // Try to join, then go to lobby
     socket.emit("join_room", { roomCode: code, playerName: name });
     navigate(`/room/${code}`);
   };
