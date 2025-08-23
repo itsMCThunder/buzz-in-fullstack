@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import compression from "compression";
 import { createServer } from "http";
@@ -17,7 +16,6 @@ app.disable("x-powered-by");
 if (!isProd) app.set("etag", false);
 app.use(compression());
 
-// never cache index shell
 const noStore = (req, res, next) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -25,63 +23,43 @@ const noStore = (req, res, next) => {
   next();
 };
 
-// built client dir
 const clientDist = path.join(__dirname, "client-dist");
-
-// loud sanity checks so we don’t silently serve blank HTML
 const htmlPath = path.join(clientDist, "index.html");
-if (!fs.existsSync(clientDist)) {
-  console.error("ERROR: client-dist not found. Did the client build run?");
-}
-if (!fs.existsSync(htmlPath)) {
-  console.error("ERROR: client-dist/index.html missing. Build is incomplete or failed.");
-}
+if (!fs.existsSync(clientDist)) console.error("ERROR: client-dist not found. Did the client build run?");
+if (!fs.existsSync(htmlPath)) console.error("ERROR: client-dist/index.html missing. Build is incomplete or failed.");
 
-// override caching for shell
 app.get("/", noStore, (req, res, next) => next());
 app.get("/index.html", noStore, (req, res, next) => next());
 
-// static files: cache hashed assets strongly, others lightly
 app.use(
   express.static(clientDist, {
     setHeaders: (res, filePath) => {
       const base = path.basename(filePath);
       const isHashed = /\.[a-f0-9]{8,}\./i.test(base);
-      if (isHashed) {
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      } else {
-        res.setHeader("Cache-Control", "no-cache");
-      }
+      if (isHashed) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      else res.setHeader("Cache-Control", "no-cache");
     }
   })
 );
 
-// health
 app.get("/health", (req, res) => res.json({ ok: true }));
-
-// simple debug endpoint to verify build presence in production
 app.get("/__debug/build-info", (req, res) => {
   try {
     const entries = fs.existsSync(clientDist) ? fs.readdirSync(clientDist) : [];
     const assetsDir = path.join(clientDist, "assets");
-    const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).filter(f => f.endsWith(".css") || f.endsWith(".js")) : [];
-    res.json({
-      clientDistExists: fs.existsSync(clientDist),
-      indexHtmlExists: fs.existsSync(htmlPath),
-      assetSamples: assets.slice(0, 10)
-    });
+    const assets = fs.existsSync(assetsDir)
+      ? fs.readdirSync(assetsDir).filter(f => f.endsWith(".css") || f.endsWith(".js"))
+      : [];
+    res.json({ clientDistExists: fs.existsSync(clientDist), indexHtmlExists: fs.existsSync(htmlPath), assetSamples: assets.slice(0, 10) });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-// Socket.IO
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*", methods: ["GET","POST"] } });
+const io = new Server(httpServer, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-// in-memory game state
-const rooms = new Map(); // code -> { hostId, players: Map<sid,{id,name,score,team}>, buzzed: sid|null }
-
+const rooms = new Map();
 const snapshot = (code) => {
   const r = rooms.get(code);
   if (!r) return null;
@@ -171,7 +149,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// SPA fallback serves the built shell only
 app.get("*", noStore, (req, res) => {
   res.sendFile(htmlPath);
 });
