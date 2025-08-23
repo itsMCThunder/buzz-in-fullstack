@@ -1,8 +1,14 @@
+// client/src/socket.js
 import { io } from "socket.io-client";
 
 const socket = io({
-  autoConnect: true,
+  // important for Cloudflare: be explicit
+  path: "/socket.io",
+  // allow fallback if websocket is blocked mid-proxy
   transports: ["websocket", "polling"],
+  // be patient through CF handshakes
+  timeout: 15000,
+  autoConnect: true,
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 500,
